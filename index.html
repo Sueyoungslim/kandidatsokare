@@ -257,6 +257,28 @@
     }
     .btn-export:hover { border-color: var(--accent); color: var(--accent); }
 
+    .btn-more {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-more:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+    .btn-more:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .more-status {
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+
     /* ── Table ── */
     .table-wrap {
       display: none;
@@ -394,7 +416,16 @@
   </div>
 
   <div class="results-bar" id="resultsBar">
-    <div class="results-count">Hittade <strong id="countNum">0</strong> kandidater</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="results-count">Hittade <strong id="countNum">0</strong> kandidater</div>
+      <button class="btn-more" id="moreBtn" onclick="loadMore()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Hitta fler kandidater
+      </button>
+      <span class="more-status" id="moreStatus"></span>
+    </div>
     <button class="btn-export" onclick="exportXlsx()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -426,6 +457,7 @@
 <script>
   /* ── State ── */
   let candidates = [];
+  let currentQuery = '';
   let sortCol = 'fit_score';
   let sortDir = -1;
 
@@ -486,6 +518,7 @@
       return;
     }
 
+    currentQuery = query;
     clearMsgs();
     setLoading(true);
 
@@ -574,9 +607,111 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
   function setLoading(on) {
     document.getElementById('loading').classList.toggle('visible', on);
     document.getElementById('searchBtn').disabled = on;
+    document.getElementById('moreBtn').disabled = on;
     if (on) {
       document.getElementById('resultsBar').classList.remove('visible');
       document.getElementById('tableWrap').classList.remove('visible');
+      document.getElementById('moreStatus').textContent = '';
+    }
+  }
+
+  /* ── Load more ── */
+  async function loadMore() {
+    if (!currentQuery || !candidates.length) return;
+    const apiKey = localStorage.getItem('anthropicApiKey');
+    if (!apiKey) return;
+
+    const btn = document.getElementById('moreBtn');
+    const status = document.getElementById('moreStatus');
+    btn.disabled = true;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 0.75s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Söker...`;
+    status.textContent = '';
+
+    const alreadyFound = candidates
+      .map(c => `- ${c.namn}${c.linkedin_url ? ' (' + c.linkedin_url + ')' : ''}`)
+      .join('\n');
+
+    const moreMessage =
+      `Ursprunglig sökning: ${currentQuery}\n\n` +
+      `Redan hittade kandidater (undvik dessa, sök efter ANDRA personer):\n${alreadyFound}\n\n` +
+      `Generera nu 4–5 NYA X-ray-sökningar med andra söktermer, titelvarianter och synonymer än förra gången. ` +
+      `Returnera 10–15 nya kandidater som INTE finns i listan ovan.`;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'interleaved-thinking-2025-05-14',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 8000,
+          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+          system: `Du är en expert på LinkedIn X-ray-sökning för nordisk tech-rekrytering. När du får en kandidatbeskrivning ska du:
+1. Generera 4–5 Google X-ray-sökningar mot site:linkedin.com/in med varierande svenska och engelska termer och universitetsnamns-varianter
+2. Köra sökningarna och läsa de LinkedIn-profiler du hittar
+3. Returnera ett JSON-array med de 10–20 mest relevanta kandidaterna
+
+Varje objekt i arrayen ska innehålla:
+{
+  "namn": "",
+  "titel": "",
+  "bolag": "",
+  "utbildning": "",
+  "plats": "",
+  "linkedin_url": "",
+  "fit_score": 0,
+  "motivering": "",
+  "summering": ""
+}
+
+fit_score är 1–10 baserat på hur väl kandidaten matchar sökkriterierna.
+motivering är en kort mening på svenska om varför kandidaten matchar rollen.
+summering beskriver kandidatens erfarenhet och bakgrund: antal års erfarenhet, tekniska kompetenser, karriärväg och bransch. Max 2 meningar på svenska.
+Returnera ENBART ett giltigt JSON-array, inget annat.`,
+          messages: [{ role: 'user', content: moreMessage }]
+        })
+      });
+
+      if (!res.ok) throw new Error('API');
+
+      const data = await res.json();
+      const textBlocks = (data.content || []).filter(b => b.type === 'text');
+      if (!textBlocks.length) throw new Error('EMPTY');
+
+      const raw = textBlocks[textBlocks.length - 1].text.trim();
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error('PARSE');
+
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed) || !parsed.length) throw new Error('EMPTY');
+
+      // Deduplicate by linkedin_url, then by namn
+      const existingUrls = new Set(candidates.map(c => c.linkedin_url).filter(Boolean));
+      const existingNames = new Set(candidates.map(c => (c.namn || '').toLowerCase()));
+      const fresh = parsed.filter(c => {
+        if (c.linkedin_url && existingUrls.has(c.linkedin_url)) return false;
+        if (existingNames.has((c.namn || '').toLowerCase())) return false;
+        return true;
+      });
+
+      if (!fresh.length) {
+        status.textContent = 'Inga nya kandidater hittades';
+      } else {
+        candidates = candidates.concat(fresh);
+        render();
+        status.textContent = `+${fresh.length} nya`;
+      }
+
+    } catch (_) {
+      status.textContent = 'Något gick fel — försök igen';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Hitta fler kandidater`;
     }
   }
 
