@@ -278,6 +278,7 @@
       color: var(--muted);
       margin-left: 6px;
     }
+    .more-status.error { color: var(--red); }
 
     /* ── Table ── */
     .table-wrap {
@@ -324,7 +325,7 @@
     }
     .name { font-weight: 600; white-space: nowrap; }
     .company { color: var(--muted); font-size: 12px; margin-top: 2px; }
-    .edu { font-size: 12px; max-width: 160px; }
+    .edu { font-size: 12px; max-width: 160px; color: var(--muted); }
     .loc { font-size: 12px; white-space: nowrap; }
     .motive { font-size: 12px; color: var(--muted); max-width: 240px; line-height: 1.5; }
 
@@ -440,10 +441,11 @@
     <table>
       <thead id="thead">
         <tr>
-          <th data-col="namn"     onclick="sort('namn')">Namn</th>
-          <th data-col="titel"    onclick="sort('titel')">Titel</th>
-          <th data-col="bolag"    onclick="sort('bolag')">Bolag</th>
-          <th data-col="plats"    onclick="sort('plats')">Plats</th>
+          <th data-col="namn"      onclick="sort('namn')">Namn</th>
+          <th data-col="titel"     onclick="sort('titel')">Titel</th>
+          <th data-col="bolag"     onclick="sort('bolag')">Bolag</th>
+          <th data-col="plats"     onclick="sort('plats')">Plats</th>
+          <th data-col="utbildning" onclick="sort('utbildning')">Utbildning</th>
           <th>Erfarenhet / Bakgrund</th>
           <th data-col="fit_score" onclick="sort('fit_score')">Matchning</th>
           <th>LinkedIn</th>
@@ -455,6 +457,39 @@
 </main>
 
 <script>
+  /* ── System prompt ── */
+  const SYSTEM_PROMPT = `Du är en expert på LinkedIn X-ray-sökning för nordisk tech-rekrytering. När du får en kandidatbeskrivning ska du:
+1. Generera 4–5 Google X-ray-sökningar mot site:linkedin.com/in med varierande svenska och engelska termer och universitetsnamns-varianter. Om sökningen specificerar en plats, inkludera alltid platsen som obligatoriskt sökord i varje sökning.
+2. Köra sökningarna och läsa de LinkedIn-profiler du faktiskt hittar och besöker
+3. Returnera ett JSON-array med de 10–15 mest relevanta kandidaterna — 10 starka kandidater är bättre än 20 mediokra
+
+Om sökningen specificerar en plats (t.ex. Stockholm, Göteborg, Malmö): inkludera ENDAST kandidater vars LinkedIn-profil visar att de faktiskt befinner sig på eller nära den platsen. Uteslut kandidater som bor på annan ort, även om de nämner platsen i sin profil av andra skäl.
+
+Varje objekt i arrayen ska innehålla:
+{
+  "namn": "",
+  "titel": "",
+  "bolag": "",
+  "utbildning": "",
+  "plats": "",
+  "linkedin_url": "",
+  "fit_score": 0,
+  "motivering": "",
+  "summering": ""
+}
+
+linkedin_url: inkludera ENDAST URL:er för profiler du faktiskt besökt och läst — lämna fältet tomt om du är osäker på att URL:en stämmer.
+
+fit_score är 1–10 baserat på hur väl kandidaten matchar sökkriterierna:
+- 9–10: perfekt match på alla kriterier (rätt roll, erfarenhet, plats, bakgrund)
+- 7–8: bra match men saknar något enskilt kriterium
+- 5–6: oklar matchning, uppfyller grundkraven men med tydliga brister
+- 1–4: svag matchning, inkluderas bara om listan annars är för kort
+
+motivering är en kort mening på svenska om varför kandidaten matchar rollen.
+summering beskriver kandidatens erfarenhet och bakgrund: antal års erfarenhet, tekniska kompetenser, karriärväg och bransch. Max 2 meningar på svenska.
+Returnera ENBART ett giltigt JSON-array, inget annat.`;
+
   /* ── State ── */
   let candidates = [];
   let currentQuery = '';
@@ -467,6 +502,11 @@
     document.getElementById('apiKeyInput').value = saved;
     document.getElementById('dot').classList.add('on');
   }
+
+  /* ── Ctrl+Enter to search ── */
+  document.getElementById('query').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runSearch();
+  });
 
   /* ── Settings panel ── */
   function toggleSettings() {
@@ -529,41 +569,23 @@
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'interleaved-thinking-2025-05-14',
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 8000,
           tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-          system: `Du är en expert på LinkedIn X-ray-sökning för nordisk tech-rekrytering. När du får en kandidatbeskrivning ska du:
-1. Generera 4–5 Google X-ray-sökningar mot site:linkedin.com/in med varierande svenska och engelska termer och universitetsnamns-varianter
-2. Köra sökningarna och läsa de LinkedIn-profiler du hittar
-3. Returnera ett JSON-array med de 10–20 mest relevanta kandidaterna
-
-Varje objekt i arrayen ska innehålla:
-{
-  "namn": "",
-  "titel": "",
-  "bolag": "",
-  "utbildning": "",
-  "plats": "",
-  "linkedin_url": "",
-  "fit_score": 0,
-  "motivering": "",
-  "summering": ""
-}
-
-fit_score är 1–10 baserat på hur väl kandidaten matchar sökkriterierna.
-motivering är en kort mening på svenska om varför kandidaten matchar rollen.
-summering beskriver kandidatens erfarenhet och bakgrund: antal års erfarenhet, tekniska kompetenser, karriärväg och bransch. Max 2 meningar på svenska.
-Returnera ENBART ett giltigt JSON-array, inget annat.`,
+          system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: query }]
         })
       });
 
       if (res.status === 401) throw Object.assign(new Error(), { code: 'AUTH' });
-      if (!res.ok) throw Object.assign(new Error(), { code: 'API', status: res.status });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error('API error', res.status, errBody);
+        throw Object.assign(new Error(), { code: 'API', status: res.status, msg: errBody?.error?.message || '' });
+      }
 
       const data = await res.json();
       const textBlocks = (data.content || []).filter(b => b.type === 'text');
@@ -597,7 +619,7 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
       } else if (err instanceof TypeError) {
         showErr('Nätverksfel — kontrollera din internetanslutning');
       } else {
-        showErr('Något gick fel — försök igen');
+        showErr(`Något gick fel (${err.status || '?'}${err.msg ? ': ' + err.msg : ''}) — försök igen`);
       }
     } finally {
       setLoading(false);
@@ -612,6 +634,7 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
       document.getElementById('resultsBar').classList.remove('visible');
       document.getElementById('tableWrap').classList.remove('visible');
       document.getElementById('moreStatus').textContent = '';
+      document.getElementById('moreStatus').classList.remove('error');
     }
   }
 
@@ -626,9 +649,12 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
     btn.disabled = true;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 0.75s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Söker...`;
     status.textContent = '';
+    status.classList.remove('error');
 
-    const alreadyFound = candidates
-      .map(c => `- ${c.namn}${c.linkedin_url ? ' (' + c.linkedin_url + ')' : ''}`)
+    // Cap exclusion list to last 30 to avoid bloating the prompt
+    const exclusionList = candidates.slice(-30);
+    const alreadyFound = exclusionList
+      .map(c => `- ${c.namn}`)
       .join('\n');
 
     const moreMessage =
@@ -644,40 +670,24 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'interleaved-thinking-2025-05-14',
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 8000,
           tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-          system: `Du är en expert på LinkedIn X-ray-sökning för nordisk tech-rekrytering. När du får en kandidatbeskrivning ska du:
-1. Generera 4–5 Google X-ray-sökningar mot site:linkedin.com/in med varierande svenska och engelska termer och universitetsnamns-varianter
-2. Köra sökningarna och läsa de LinkedIn-profiler du hittar
-3. Returnera ett JSON-array med de 10–20 mest relevanta kandidaterna
-
-Varje objekt i arrayen ska innehålla:
-{
-  "namn": "",
-  "titel": "",
-  "bolag": "",
-  "utbildning": "",
-  "plats": "",
-  "linkedin_url": "",
-  "fit_score": 0,
-  "motivering": "",
-  "summering": ""
-}
-
-fit_score är 1–10 baserat på hur väl kandidaten matchar sökkriterierna.
-motivering är en kort mening på svenska om varför kandidaten matchar rollen.
-summering beskriver kandidatens erfarenhet och bakgrund: antal års erfarenhet, tekniska kompetenser, karriärväg och bransch. Max 2 meningar på svenska.
-Returnera ENBART ett giltigt JSON-array, inget annat.`,
+          system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: moreMessage }]
         })
       });
 
-      if (!res.ok) throw new Error('API');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error('loadMore API error', res.status, errBody);
+        status.textContent = `Fel ${res.status}${errBody?.error?.message ? ': ' + errBody.error.message : ''} — försök igen`;
+        status.classList.add('error');
+        return;
+      }
 
       const data = await res.json();
       const textBlocks = (data.content || []).filter(b => b.type === 'text');
@@ -707,8 +717,10 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
         status.textContent = `+${fresh.length} nya`;
       }
 
-    } catch (_) {
+    } catch (err) {
+      console.error('loadMore error', err);
       status.textContent = 'Något gick fel — försök igen';
+      status.classList.add('error');
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Hitta fler kandidater`;
@@ -739,6 +751,7 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
         `<td><div class="name">${x(c.titel)}</div></td>` +
         `<td class="company">${x(c.bolag)}</td>` +
         `<td class="loc">${x(c.plats)}</td>` +
+        `<td class="edu">${x(c.utbildning)}</td>` +
         `<td class="motive">${x(c.summering)}</td>` +
         `<td><span class="badge ${cls}">${score}</span><div class="motive" style="margin-top:5px">${x(c.motivering)}</div></td>` +
         `<td>${url ? `<a class="btn-li" href="${url}" target="_blank" rel="noopener noreferrer">Öppna →</a>` : '–'}</td>`;
