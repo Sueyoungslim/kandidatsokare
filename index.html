@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kandidatsökare</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #2f81f7;
+      --green: #3fb950;
+      --yellow: #e3b341;
+      --red: #f85149;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }
+
+    /* ── Settings ── */
+    .settings-wrap { position: relative; }
+
+    .settings-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .settings-btn:hover { color: var(--text); background: var(--surface2); }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .dot.on { background: var(--green); }
+
+    .settings-panel {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      width: 340px;
+      z-index: 200;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .settings-panel.open { display: block; }
+
+    .settings-panel label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 7px;
+    }
+
+    .settings-panel input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 13px;
+      font-family: monospace;
+      margin-bottom: 12px;
+    }
+    .settings-panel input:focus { outline: none; border-color: var(--accent); }
+
+    .btn-save {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-save:hover { opacity: 0.85; }
+
+    /* ── Main ── */
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 52px 24px 80px;
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .hero h2 { font-size: 30px; font-weight: 700; margin-bottom: 10px; }
+    .hero p { color: var(--muted); font-size: 15px; }
+
+    /* ── Search box ── */
+    .search-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 36px;
+    }
+
+    textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 15px;
+      line-height: 1.65;
+      padding: 16px;
+      resize: vertical;
+      min-height: 112px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      margin-bottom: 14px;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(47,129,247,0.12);
+    }
+    textarea::placeholder { color: var(--muted); }
+
+    .btn-search {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 14px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-search:hover:not(:disabled) { opacity: 0.85; }
+    .btn-search:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Inline messages ── */
+    .msg {
+      display: none;
+      align-items: flex-start;
+      gap: 9px;
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+    .msg.visible { display: flex; }
+
+    .msg-warn {
+      background: rgba(227,179,65,0.1);
+      border: 1px solid rgba(227,179,65,0.25);
+      color: var(--yellow);
+    }
+    .msg-err {
+      background: rgba(248,81,73,0.1);
+      border: 1px solid rgba(248,81,73,0.25);
+      color: var(--red);
+    }
+
+    /* ── Loading ── */
+    .loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 0;
+      gap: 18px;
+    }
+    .loading.visible { display: flex; }
+
+    .spinner {
+      width: 38px; height: 38px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      color: var(--muted);
+      font-size: 14px;
+      animation: pulse-text 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse-text { 0%,100%{opacity:1} 50%{opacity:0.45} }
+
+    /* ── Results header ── */
+    .results-bar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .results-bar.visible { display: flex; }
+
+    .results-count { font-size: 14px; color: var(--muted); }
+    .results-count strong { color: var(--text); }
+
+    .btn-export {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-export:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Table ── */
+    .table-wrap {
+      display: none;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .table-wrap.visible { display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+    thead th {
+      background: var(--surface2);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+      transition: color 0.15s;
+    }
+    thead th:hover { color: var(--text); }
+    thead th.col-active { color: var(--accent); }
+
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:nth-child(even) { background: rgba(255,255,255,0.018); }
+    tbody tr:hover { background: var(--surface2); }
+
+    td { padding: 11px 14px; vertical-align: top; }
+
+    .col-rank {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      width: 36px;
+    }
+    .name { font-weight: 600; white-space: nowrap; }
+    .company { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .edu { font-size: 12px; max-width: 160px; }
+    .loc { font-size: 12px; white-space: nowrap; }
+    .motive { font-size: 12px; color: var(--muted); max-width: 240px; line-height: 1.5; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      padding: 3px 9px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-family: monospace;
+      font-weight: 700;
+    }
+    .badge-g { background: rgba(63,185,80,0.15); color: var(--green); }
+    .badge-y { background: rgba(227,179,65,0.15); color: var(--yellow); }
+    .badge-r { background: rgba(248,81,73,0.15); color: var(--red); }
+
+    .btn-li {
+      display: inline-block;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 4px 9px;
+      font-size: 11px;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color 0.15s;
+    }
+    .btn-li:hover { border-color: var(--accent); }
+
+    /* ── Highlight gear when key missing ── */
+    @keyframes gear-shake {
+      0%,100%{transform:rotate(0)} 20%{transform:rotate(-12deg)} 60%{transform:rotate(12deg)} 80%{transform:rotate(-6deg)}
+    }
+    .gear-shake { animation: gear-shake 0.4s ease-in-out 2; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Kandidatsökare</h1>
+  <div class="settings-wrap">
+    <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()">
+      <span class="dot" id="dot"></span>
+      <svg id="gearIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Inställningar
+    </button>
+
+    <div class="settings-panel" id="settingsPanel">
+      <label>Anthropic API-nyckel</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
+      <button class="btn-save" onclick="saveKey()">Spara</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <h2>Hitta rätt kandidater</h2>
+    <p>Beskriv vem du letar efter — Claude kör X-ray-sökningar mot LinkedIn och rankar kandidaterna åt dig</p>
+  </div>
+
+  <div class="search-box">
+    <textarea id="query" rows="4"
+      placeholder="Beskriv kandidaten du letar efter, t.ex: Civilingenjör datateknik från KTH eller Chalmers, 2–5 års erfarenhet, bakgrund inom backend eller ML, baserad i Stockholm"></textarea>
+
+    <div class="msg msg-warn" id="noKeyMsg">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/>
+      </svg>
+      Lägg till din Anthropic API-nyckel i inställningarna
+    </div>
+
+    <button class="btn-search" id="searchBtn" onclick="runSearch()">
+      Hitta kandidater →
+    </button>
+
+    <div class="msg msg-err" id="errMsg"></div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">⟳ Claude söker efter kandidater...</div>
+  </div>
+
+  <div class="results-bar" id="resultsBar">
+    <div class="results-count">Hittade <strong id="countNum">0</strong> kandidater</div>
+    <button class="btn-export" onclick="exportXlsx()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Exportera till Excel
+    </button>
+  </div>
+
+  <div class="table-wrap" id="tableWrap">
+    <table>
+      <thead id="thead">
+        <tr>
+          <th data-col="rank"     onclick="sort('rank')">#</th>
+          <th data-col="namn"     onclick="sort('namn')">Namn</th>
+          <th data-col="titel"    onclick="sort('titel')">Titel / Bolag</th>
+          <th data-col="utbildning" onclick="sort('utbildning')">Utbildning</th>
+          <th data-col="plats"    onclick="sort('plats')">Plats</th>
+          <th data-col="fit_score" onclick="sort('fit_score')">Matchning</th>
+          <th>Motivering</th>
+          <th>LinkedIn</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  /* ── State ── */
+  let candidates = [];
+  let sortCol = 'fit_score';
+  let sortDir = -1;
+
+  /* ── Init ── */
+  const saved = localStorage.getItem('anthropicApiKey');
+  if (saved) {
+    document.getElementById('apiKeyInput').value = saved;
+    document.getElementById('dot').classList.add('on');
+  }
+
+  /* ── Settings panel ── */
+  function toggleSettings() {
+    document.getElementById('settingsPanel').classList.toggle('open');
+  }
+
+  document.addEventListener('click', e => {
+    const wrap = document.querySelector('.settings-wrap');
+    if (!wrap.contains(e.target)) {
+      document.getElementById('settingsPanel').classList.remove('open');
+    }
+  });
+
+  function saveKey() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    if (!key) return;
+    localStorage.setItem('anthropicApiKey', key);
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('settingsPanel').classList.remove('open');
+    clearMsgs();
+  }
+
+  /* ── Messages ── */
+  function clearMsgs() {
+    document.getElementById('noKeyMsg').classList.remove('visible');
+    const e = document.getElementById('errMsg');
+    e.classList.remove('visible');
+    e.innerHTML = '';
+  }
+
+  function showErr(html) {
+    const e = document.getElementById('errMsg');
+    e.innerHTML = html;
+    e.classList.add('visible');
+  }
+
+  /* ── Search ── */
+  async function runSearch() {
+    const query = document.getElementById('query').value.trim();
+    if (!query) return;
+
+    const apiKey = localStorage.getItem('anthropicApiKey');
+    if (!apiKey) {
+      document.getElementById('noKeyMsg').classList.add('visible');
+      const gear = document.getElementById('gearIcon');
+      gear.classList.remove('gear-shake');
+      void gear.offsetWidth;
+      gear.classList.add('gear-shake');
+      return;
+    }
+
+    clearMsgs();
+    setLoading(true);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'interleaved-thinking-2025-05-14'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 8000,
+          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+          system: `Du är en expert på LinkedIn X-ray-sökning för nordisk tech-rekrytering. När du får en kandidatbeskrivning ska du:
+1. Generera 4–5 Google X-ray-sökningar mot site:linkedin.com/in med varierande svenska och engelska termer och universitetsnamns-varianter
+2. Köra sökningarna och läsa de LinkedIn-profiler du hittar
+3. Returnera ett JSON-array med de 10–20 mest relevanta kandidaterna
+
+Varje objekt i arrayen ska innehålla:
+{
+  "namn": "",
+  "titel": "",
+  "bolag": "",
+  "utbildning": "",
+  "plats": "",
+  "linkedin_url": "",
+  "fit_score": 0,
+  "motivering": "",
+  "summering": ""
+}
+
+fit_score är 1–10 baserat på hur väl kandidaten matchar sökkriterierna.
+motivering är en kort mening på svenska om varför de matchar.
+summering är 2 meningar på svenska om kandidatens bakgrund och relevans.
+Returnera ENBART ett giltigt JSON-array, inget annat.`,
+          messages: [{ role: 'user', content: query }]
+        })
+      });
+
+      if (res.status === 401) throw Object.assign(new Error(), { code: 'AUTH' });
+      if (!res.ok) throw Object.assign(new Error(), { code: 'API', status: res.status });
+
+      const data = await res.json();
+      const textBlocks = (data.content || []).filter(b => b.type === 'text');
+      if (!textBlocks.length) throw Object.assign(new Error(), { code: 'EMPTY' });
+
+      const raw = textBlocks[textBlocks.length - 1].text.trim();
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) throw Object.assign(new Error(), { code: 'PARSE' });
+
+      let parsed;
+      try { parsed = JSON.parse(match[0]); }
+      catch (_) { throw Object.assign(new Error(), { code: 'PARSE' }); }
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw Object.assign(new Error(), { code: 'EMPTY' });
+      }
+
+      candidates = parsed;
+      sortCol = 'fit_score';
+      sortDir = -1;
+      render();
+
+    } catch (err) {
+      const code = err.code;
+      if (code === 'AUTH') {
+        showErr('Ogiltig API-nyckel — kontrollera din nyckel på console.anthropic.com');
+      } else if (code === 'EMPTY') {
+        showErr('Inga kandidater hittades — försök med en bredare beskrivning');
+      } else if (code === 'PARSE') {
+        showErr('Något gick fel — försök igen <button onclick="runSearch()" style="background:none;border:1px solid currentColor;color:inherit;border-radius:4px;padding:2px 8px;margin-left:6px;cursor:pointer;font-size:11px">Försök igen</button>');
+      } else if (err instanceof TypeError) {
+        showErr('Nätverksfel — kontrollera din internetanslutning');
+      } else {
+        showErr('Något gick fel — försök igen');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setLoading(on) {
+    document.getElementById('loading').classList.toggle('visible', on);
+    document.getElementById('searchBtn').disabled = on;
+    if (on) {
+      document.getElementById('resultsBar').classList.remove('visible');
+      document.getElementById('tableWrap').classList.remove('visible');
+    }
+  }
+
+  /* ── Render table ── */
+  function render() {
+    const rows = [...candidates].sort((a, b) => {
+      if (sortCol === 'rank') {
+        const ai = candidates.indexOf(a), bi = candidates.indexOf(b);
+        return sortDir * (ai - bi);
+      }
+      if (sortCol === 'fit_score') {
+        return sortDir * ((Number(b.fit_score) || 0) - (Number(a.fit_score) || 0));
+      }
+      const av = String(a[sortCol] || '').toLowerCase();
+      const bv = String(b[sortCol] || '').toLowerCase();
+      return sortDir * av.localeCompare(bv, 'sv');
+    });
+
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+
+    rows.forEach((c, i) => {
+      const score = Number(c.fit_score) || 0;
+      const cls = score >= 8 ? 'badge-g' : score >= 5 ? 'badge-y' : 'badge-r';
+      const url = c.linkedin_url || '';
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td class="col-rank">${i + 1}</td>` +
+        `<td><div class="name">${x(c.namn)}</div></td>` +
+        `<td><div class="name">${x(c.titel)}</div><div class="company">${x(c.bolag)}</div></td>` +
+        `<td class="edu">${x(c.utbildning)}</td>` +
+        `<td class="loc">${x(c.plats)}</td>` +
+        `<td><span class="badge ${cls}">${score}</span></td>` +
+        `<td class="motive">${x(c.motivering)}</td>` +
+        `<td>${url ? `<a class="btn-li" href="${url}" target="_blank" rel="noopener noreferrer">Öppna →</a>` : '–'}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('countNum').textContent = candidates.length;
+    document.getElementById('resultsBar').classList.add('visible');
+    document.getElementById('tableWrap').classList.add('visible');
+
+    // Update sort indicators
+    document.querySelectorAll('#thead th').forEach(th => {
+      const col = th.dataset.col;
+      th.classList.toggle('col-active', col === sortCol);
+      if (col) {
+        th.textContent = th.textContent.replace(/[↑↓]$/, '').trimEnd();
+        if (col === sortCol) th.textContent += ' ' + (sortDir === -1 ? '↓' : '↑');
+      }
+    });
+  }
+
+  function sort(col) {
+    if (sortCol === col) {
+      sortDir *= -1;
+    } else {
+      sortCol = col;
+      sortDir = col === 'fit_score' ? -1 : 1;
+    }
+    render();
+  }
+
+  /* ── Escape HTML ── */
+  function x(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /* ── Excel export ── */
+  function exportXlsx() {
+    if (!candidates.length) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const sorted = [...candidates].sort((a, b) =>
+      (Number(b.fit_score) || 0) - (Number(a.fit_score) || 0)
+    );
+    const rows = sorted.map((c, i) => ({
+      'Rank': i + 1,
+      'Namn': c.namn || '',
+      'Titel': c.titel || '',
+      'Bolag': c.bolag || '',
+      'Utbildning': c.utbildning || '',
+      'Plats': c.plats || '',
+      'Matchningspoäng': c.fit_score || '',
+      'Motivering': c.motivering || '',
+      'Summering': c.summering || '',
+      'LinkedIn URL': c.linkedin_url || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 25 }, { wch: 25 }, { wch: 25 },
+      { wch: 30 }, { wch: 20 }, { wch: 14 }, { wch: 45 },
+      { wch: 65 }, { wch: 55 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Kandidater');
+    XLSX.writeFile(wb, `kandidater-${today}.xlsx`);
+  }
+</script>
+</body>
+</html>
