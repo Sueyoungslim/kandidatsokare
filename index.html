@@ -409,13 +409,12 @@
     <table>
       <thead id="thead">
         <tr>
-          <th data-col="rank"     onclick="sort('rank')">#</th>
           <th data-col="namn"     onclick="sort('namn')">Namn</th>
-          <th data-col="titel"    onclick="sort('titel')">Titel / Bolag</th>
-          <th data-col="utbildning" onclick="sort('utbildning')">Utbildning</th>
+          <th data-col="titel"    onclick="sort('titel')">Titel</th>
+          <th data-col="bolag"    onclick="sort('bolag')">Bolag</th>
           <th data-col="plats"    onclick="sort('plats')">Plats</th>
+          <th>Erfarenhet / Bakgrund</th>
           <th data-col="fit_score" onclick="sort('fit_score')">Matchning</th>
-          <th>Motivering</th>
           <th>LinkedIn</th>
         </tr>
       </thead>
@@ -523,8 +522,8 @@ Varje objekt i arrayen ska innehålla:
 }
 
 fit_score är 1–10 baserat på hur väl kandidaten matchar sökkriterierna.
-motivering är en kort mening på svenska om varför de matchar.
-summering är 2 meningar på svenska om kandidatens bakgrund och relevans.
+motivering är en kort mening på svenska om varför kandidaten matchar rollen.
+summering beskriver kandidatens erfarenhet och bakgrund: antal års erfarenhet, tekniska kompetenser, karriärväg och bransch. Max 2 meningar på svenska.
 Returnera ENBART ett giltigt JSON-array, inget annat.`,
           messages: [{ role: 'user', content: query }]
         })
@@ -584,10 +583,6 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
   /* ── Render table ── */
   function render() {
     const rows = [...candidates].sort((a, b) => {
-      if (sortCol === 'rank') {
-        const ai = candidates.indexOf(a), bi = candidates.indexOf(b);
-        return sortDir * (ai - bi);
-      }
       if (sortCol === 'fit_score') {
         return sortDir * ((Number(b.fit_score) || 0) - (Number(a.fit_score) || 0));
       }
@@ -605,13 +600,12 @@ Returnera ENBART ett giltigt JSON-array, inget annat.`,
       const url = c.linkedin_url || '';
       const tr = document.createElement('tr');
       tr.innerHTML =
-        `<td class="col-rank">${i + 1}</td>` +
         `<td><div class="name">${x(c.namn)}</div></td>` +
-        `<td><div class="name">${x(c.titel)}</div><div class="company">${x(c.bolag)}</div></td>` +
-        `<td class="edu">${x(c.utbildning)}</td>` +
+        `<td><div class="name">${x(c.titel)}</div></td>` +
+        `<td class="company">${x(c.bolag)}</td>` +
         `<td class="loc">${x(c.plats)}</td>` +
-        `<td><span class="badge ${cls}">${score}</span></td>` +
-        `<td class="motive">${x(c.motivering)}</td>` +
+        `<td class="motive">${x(c.summering)}</td>` +
+        `<td><span class="badge ${cls}">${score}</span><div class="motive" style="margin-top:5px">${x(c.motivering)}</div></td>` +
         `<td>${url ? `<a class="btn-li" href="${url}" target="_blank" rel="noopener noreferrer">Öppna →</a>` : '–'}</td>`;
       tbody.appendChild(tr);
     });
